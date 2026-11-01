@@ -1,0 +1,51 @@
+{
+  "name": "D6 퇴근길: 평일 18–20시에 타면 집으로 길 안내, 이미 안내 중이면 먼저 묻기",
+  "start": "2026-10-27T17:00:00+09:00",
+  "capability": "CONTROL_CLOSED",
+  "routines": [
+    {
+      "id": "go_home",
+      "name": "퇴근길",
+      "trigger": { "type": "RideStart" },
+      "condition": {
+        "type": "And",
+        "conditions": [
+          { "type": "DayType", "weekdays": true, "weekends": false },
+          { "type": "TimeWindow", "startMinute": 1080, "endMinute": 1200 }
+        ]
+      },
+      "actions": [{ "type": "SetDestination", "placeId": "home" }],
+      "origin": "TEMPLATE"
+    }
+  ],
+  "initial": { "seat.occupied.driver": false, "door.lock": true },
+  "steps": [
+    { "type": "at", "time": "2026-10-27T18:30:00+09:00" },
+    { "type": "rideStart" },
+    { "type": "expect", "destinations": ["home"], "confirmations": 0, "decisions": ["go_home:Ran(Requested)"] },
+    { "type": "rideEnd" },
+
+    { "type": "at", "time": "2026-10-28T12:00:00+09:00" },
+    { "type": "rideStart" },
+    { "type": "expect", "destinations": [], "decisions": ["go_home:ConditionNotMet"] },
+    { "type": "rideEnd" },
+
+    { "type": "at", "time": "2026-10-28T18:40:00+09:00" },
+    { "type": "navigating", "value": true },
+    { "type": "confirmAnswer", "value": false },
+    { "type": "rideStart" },
+    { "type": "expect", "destinations": [], "confirmations": 1, "decisions": ["go_home:Ran(Cancelled:CONFIRM_DECLINED)"] },
+    { "type": "rideEnd" },
+
+    { "type": "at", "time": "2026-10-29T19:00:00+09:00" },
+    { "type": "confirmAnswer", "value": true },
+    { "type": "rideStart" },
+    { "type": "expect", "destinations": ["home"], "confirmations": 1, "decisions": ["go_home:Ran(Requested)"] },
+    { "type": "rideEnd" },
+    { "type": "navigating", "value": false },
+
+    { "type": "at", "time": "2026-10-31T18:30:00+09:00" },
+    { "type": "rideStart" },
+    { "type": "expect", "destinations": [], "decisions": ["go_home:ConditionNotMet"] }
+  ]
+}

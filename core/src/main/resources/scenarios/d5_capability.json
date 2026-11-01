@@ -1,0 +1,51 @@
+{
+  "name": "D5 권한 강등·승격: Control 미개방이면 알림, 개방되면 같은 루틴이 자동 실행 (모의)",
+  "start": "2026-10-27T08:00:00+09:00",
+  "capability": "CONTROL_CLOSED",
+  "simulated": true,
+  "routines": [
+    {
+      "id": "winter",
+      "name": "겨울 출근",
+      "trigger": { "type": "RideStart" },
+      "actions": [{ "type": "Write", "signal": "steeringWheel.heat", "value": 1 }],
+      "origin": "TEMPLATE"
+    }
+  ],
+  "initial": {
+    "seat.occupied.driver": false,
+    "door.lock": true,
+    "steeringWheel.heat": 0
+  },
+  "steps": [
+    { "type": "rideStart" },
+    {
+      "type": "expect",
+      "writes": [],
+      "notifications": [{ "text": "notify.downgraded", "reason": "SDK_NOT_OPEN" }],
+      "decisions": ["winter:Ran(Notified:SDK_NOT_OPEN)"],
+      "simulated": true
+    },
+    { "type": "rideEnd" },
+    { "type": "capability", "preset": "NO_PERMISSION", "simulated": true },
+    { "type": "rideStart" },
+    {
+      "type": "expect",
+      "writes": [],
+      "notifications": [{ "text": "notify.downgraded", "reason": "NO_PERMISSION" }],
+      "decisions": ["winter:Ran(Notified:NO_PERMISSION)"]
+    },
+    { "type": "rideEnd" },
+    { "type": "capability", "preset": "FULL", "simulated": true },
+    { "type": "rideStart" },
+    { "type": "advance", "ms": 1000 },
+    {
+      "type": "expect",
+      "writes": [{ "signal": "steeringWheel.heat", "value": 1 }],
+      "notifications": [],
+      "confirmed": ["steeringWheel.heat"],
+      "decisions": ["winter:Ran(Sent)"],
+      "simulated": true
+    }
+  ]
+}

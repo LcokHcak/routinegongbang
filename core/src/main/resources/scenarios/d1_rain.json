@@ -1,0 +1,50 @@
+{
+  "name": "D1 비 오는 날: 와이퍼가 10초 넘게 작동하면 앞유리 성에 제거",
+  "start": "2026-10-27T08:00:00+09:00",
+  "routines": [
+    {
+      "id": "rain",
+      "name": "비 오는 날",
+      "trigger": { "type": "SignalEdge", "signal": "wiper.front.state", "to": ["ON"], "holdSeconds": 10 },
+      "actions": [
+        { "type": "Write", "signal": "hvac.defroster.front", "value": true }
+      ],
+      "limits": { "cooldownMinutes": 30 },
+      "origin": "TEMPLATE"
+    }
+  ],
+  "initial": {
+    "seat.occupied.driver": false,
+    "door.lock": false,
+    "wiper.front.state": "OFF",
+    "hvac.defroster.front": false
+  },
+  "steps": [
+    { "type": "rideStart" },
+    { "type": "drive", "state": "DRIVING" },
+    { "type": "user", "signal": "wiper.front.state", "value": "ON" },
+    { "type": "advance", "ms": 2000 },
+    { "type": "user", "signal": "wiper.front.state", "value": "OFF" },
+    { "type": "expect", "writes": [], "notifications": [], "decisions": [] },
+    { "type": "user", "signal": "wiper.front.state", "value": "ON" },
+    { "type": "advance", "ms": 61000 },
+    {
+      "type": "expect",
+      "writes": [{ "signal": "hvac.defroster.front", "value": true }],
+      "notifications": [],
+      "decisions": ["rain:Ran(Sent)"],
+      "confirmed": ["hvac.defroster.front"],
+      "values": { "hvac.defroster.front": true }
+    },
+    { "type": "user", "signal": "wiper.front.state", "value": "OFF" },
+    { "type": "user", "signal": "wiper.front.state", "value": "ON" },
+    { "type": "advance", "ms": 60000 },
+    { "type": "expect", "writes": [], "notifications": [], "decisions": ["rain:LimitBlocked(COOLDOWN)"] },
+    { "type": "user", "signal": "hvac.defroster.front", "value": false },
+    { "type": "advance", "ms": 1800000 },
+    { "type": "user", "signal": "wiper.front.state", "value": "OFF" },
+    { "type": "user", "signal": "wiper.front.state", "value": "ON" },
+    { "type": "advance", "ms": 61000 },
+    { "type": "expect", "writes": [], "notifications": [], "decisions": ["rain:Ran(Skipped:USER_OVERRIDE)"] }
+  ]
+}

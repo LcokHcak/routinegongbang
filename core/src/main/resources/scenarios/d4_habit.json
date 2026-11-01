@@ -1,0 +1,51 @@
+{
+  "name": "D4 습관 제안: 추운 아침 사흘 연속 핸들 열선을 켜면 루틴을 제안하고 나흘째 자동 실행",
+  "start": "2026-10-26T07:00:00+09:00",
+  "initial": {
+    "seat.occupied.driver": false,
+    "door.lock": true,
+    "steeringWheel.heat": 0,
+    "hvac.temperature.cabin": 2.0
+  },
+  "steps": [
+    { "type": "at", "time": "2026-10-26T08:00:00+09:00" },
+    { "type": "rideStart" },
+    { "type": "advance", "ms": 120000 },
+    { "type": "user", "signal": "steeringWheel.heat", "value": 1 },
+    { "type": "drive", "state": "DRIVING" },
+    { "type": "advance", "ms": 1200000 },
+    { "type": "rideEnd" },
+    { "type": "user", "signal": "steeringWheel.heat", "value": 0 },
+    { "type": "expect", "noSuggestion": true },
+
+    { "type": "at", "time": "2026-10-27T08:15:00+09:00" },
+    { "type": "rideStart" },
+    { "type": "advance", "ms": 60000 },
+    { "type": "user", "signal": "steeringWheel.heat", "value": 1 },
+    { "type": "rideEnd" },
+    { "type": "user", "signal": "steeringWheel.heat", "value": 0 },
+    { "type": "expect", "noSuggestion": true },
+
+    { "type": "at", "time": "2026-10-28T07:50:00+09:00" },
+    { "type": "rideStart" },
+    { "type": "advance", "ms": 180000 },
+    { "type": "user", "signal": "steeringWheel.heat", "value": 1 },
+    { "type": "rideEnd" },
+    { "type": "user", "signal": "steeringWheel.heat", "value": 0 },
+    { "type": "expect", "suggestion": { "signal": "steeringWheel.heat", "value": 1 } },
+    { "type": "acceptSuggestion" },
+    { "type": "expect", "noSuggestion": true },
+
+    { "type": "at", "time": "2026-10-29T08:05:00+09:00" },
+    { "type": "rideStart" },
+    { "type": "advance", "ms": 1000 },
+    {
+      "type": "expect",
+      "writes": [{ "signal": "steeringWheel.heat", "value": 1 }],
+      "confirmed": ["steeringWheel.heat"],
+      "decisions": ["habit-steeringWheel.heat-1-weekday-0750-cold:Ran(Sent)"]
+    },
+    { "type": "rideEnd" },
+    { "type": "user", "signal": "steeringWheel.heat", "value": 0 }
+  ]
+}

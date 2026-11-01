@@ -1,0 +1,33 @@
+{
+  "name": "D3 충전 완료: 충전 중 배터리가 80%를 넘으면 알림",
+  "start": "2026-10-27T22:00:00+09:00",
+  "routines": [
+    {
+      "id": "charged",
+      "name": "충전 80%",
+      "trigger": { "type": "Threshold", "signal": "ev.soc", "op": "GE", "value": 80 },
+      "condition": { "type": "Compare", "signal": "ev.charging", "op": "EQ", "value": true },
+      "actions": [{ "type": "Notify", "textRes": "notify_charge_done" }],
+      "limits": { "cooldownMinutes": 60 },
+      "origin": "TEMPLATE"
+    }
+  ],
+  "initial": { "ev.charging": true, "ev.soc": 70 },
+  "steps": [
+    { "type": "user", "signal": "ev.soc", "value": 76 },
+    { "type": "user", "signal": "ev.soc", "value": 79 },
+    { "type": "expect", "notifications": [], "decisions": [] },
+    { "type": "user", "signal": "ev.soc", "value": 81 },
+    { "type": "expect", "notifications": [{ "text": "notify_charge_done" }], "decisions": ["charged:Ran(Notified)"] },
+    { "type": "user", "signal": "ev.soc", "value": 82 },
+    { "type": "expect", "notifications": [], "decisions": [] },
+    { "type": "user", "signal": "ev.soc", "value": 79 },
+    { "type": "user", "signal": "ev.soc", "value": 80 },
+    { "type": "expect", "notifications": [], "decisions": ["charged:LimitBlocked(COOLDOWN)"] },
+    { "type": "advance", "ms": 3660000 },
+    { "type": "user", "signal": "ev.charging", "value": false },
+    { "type": "user", "signal": "ev.soc", "value": 60 },
+    { "type": "user", "signal": "ev.soc", "value": 85 },
+    { "type": "expect", "notifications": [], "decisions": ["charged:ConditionNotMet"] }
+  ]
+}

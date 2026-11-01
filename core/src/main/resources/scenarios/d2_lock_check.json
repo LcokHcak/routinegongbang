@@ -1,0 +1,34 @@
+{
+  "name": "D2 하차 점검: 내려서 잠갔는데 창문이 열려 있으면 알림",
+  "start": "2026-10-27T18:00:00+09:00",
+  "routines": [
+    {
+      "id": "window_check",
+      "name": "창문 확인",
+      "trigger": { "type": "RideEnd" },
+      "condition": { "type": "Compare", "signal": "window.position.driver", "op": "GT", "value": 0 },
+      "actions": [{ "type": "Notify", "textRes": "notify_window_open" }],
+      "origin": "TEMPLATE"
+    }
+  ],
+  "initial": {
+    "seat.occupied.driver": false,
+    "door.lock": true,
+    "window.position.driver": 0
+  },
+  "steps": [
+    { "type": "rideStart" },
+    { "type": "user", "signal": "window.position.driver", "value": 30 },
+    { "type": "drive", "state": "DRIVING" },
+    { "type": "user", "signal": "door.lock", "value": true },
+    { "type": "expect", "notifications": [], "decisions": [] },
+    { "type": "user", "signal": "door.lock", "value": false },
+    { "type": "rideEnd" },
+    { "type": "expect", "notifications": [{ "text": "notify_window_open" }], "decisions": ["window_check:Ran(Notified)"] },
+    { "type": "at", "time": "2026-10-28T08:00:00+09:00" },
+    { "type": "rideStart" },
+    { "type": "user", "signal": "window.position.driver", "value": 0 },
+    { "type": "rideEnd" },
+    { "type": "expect", "notifications": [], "decisions": ["window_check:ConditionNotMet"] }
+  ]
+}

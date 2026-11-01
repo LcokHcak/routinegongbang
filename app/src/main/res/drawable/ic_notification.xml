@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The launcher mark as a notification icon: the status bar draws it as a single-colour silhouette. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="56"
+    android:viewportHeight="56">
+    <group android:translateX="-26" android:translateY="-26">
+        <path
+            android:pathData="M54,34 A20,20 0 1,1 36.68,44"
+            android:strokeWidth="7"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeLineCap="round"
+            android:fillColor="#00000000" />
+        <path
+            android:pathData="M40.6,37.2 L29.9,42.4 L41.5,49.1 Z"
+            android:fillColor="#FFFFFFFF" />
+        <path
+            android:pathData="M54,54 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0"
+            android:fillColor="#FFFFFFFF" />
+    </group>
+</vector>

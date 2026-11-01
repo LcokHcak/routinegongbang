@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug-only: the platform probe used to check the emulator. Never shipped in release builds. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Control permissions: the emulator accepts writes; never in release until the Control SDK opens. -->
+    <uses-permission android:name="pleos.car.permission.CONTROL_CAR_CLIMATE" />
+    <uses-permission android:name="pleos.car.permission.CONTROL_CAR_SEATS" />
+    <uses-permission android:name="pleos.car.permission.CONTROL_CAR_WINDOWS" />
+    <uses-permission android:name="pleos.car.permission.CONTROL_CAR_LIGHTS" />
+    <uses-permission android:name="pleos.car.permission.CONTROL_CAR_MIRRORS" />
+
+    <application>
+        <activity
+            android:name=".probe.ProbeActivity"
+            android:exported="true"
+            android:label="RW Probe"
+            android:launchMode="singleTop" />
+
+        <!-- Debug-only adb commands (run now, tick). DUMP limits callers to adb/shell; never in release. -->
+        <receiver
+            android:name=".debug.DebugCommandReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="kr.routinegongbang.app.DEBUG" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

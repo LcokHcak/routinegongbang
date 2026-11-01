@@ -1,0 +1,47 @@
+{
+  "packageName": "kr.routinegongbang.app",
+  "appDescription": "An in-car routine app that runs the driver's saved car routines and lists them.",
+  "version": "0.1.0",
+  "actionCalls": [
+    {
+      "type": "function",
+      "function": {
+        "name": "START_ROUTINE",
+        "description": "Runs one of the driver's saved routines now, by its name, while the car is parked.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "routineName": { "type": "string", "description": "Name of the saved routine to run." }
+          },
+          "required": ["routineName"]
+        },
+        "component": "service"
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "SET_ROUTINE_ENABLED",
+        "description": "Turns one of the driver's saved routines on or off, by its name.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "routineName": { "type": "string", "description": "Name of the saved routine to turn on or off." },
+            "enabled": { "type": "boolean", "description": "True to turn the routine on, false to turn it off." }
+          },
+          "required": ["routineName", "enabled"]
+        },
+        "component": "service"
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "GET_ROUTINES",
+        "description": "Lists the driver's saved routines with whether each is on.",
+        "parameters": { "type": "object", "properties": {}, "required": [] },
+        "component": "service"
+      }
+    }
+  ]
+}
