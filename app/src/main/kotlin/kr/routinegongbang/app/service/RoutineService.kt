@@ -34,6 +34,7 @@ import kr.routinegongbang.app.data.RoutineRepository
 import kr.routinegongbang.app.platform.AndroidNotifier
 import kr.routinegongbang.app.platform.Channels
 import kr.routinegongbang.app.platform.CrashRecorder
+import kr.routinegongbang.app.platform.NoticeText
 import kr.routinegongbang.app.platform.NotificationConfirmer
 import kr.routinegongbang.app.pleos.PleosBindings
 import kr.routinegongbang.app.pleos.PleosNavigator
@@ -424,7 +425,7 @@ class RoutineService : Service() {
             .setSmallIcon(android.R.drawable.ic_menu_rotate)
             .setContentTitle(getString(R.string.app_name))
             // The car's own notification area says it too while the real routines pause for the demo.
-            .setContentText(getString(if (DebugSettings.fakeVehicle(this)) R.string.service_demo else R.string.service_running))
+            .setContentText(NoticeText.readable(getString(if (DebugSettings.fakeVehicle(this)) R.string.service_demo else R.string.service_running)))
             .setOngoing(true)
             .build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
