@@ -30,6 +30,7 @@ import kr.routinegongbang.app.R
 import kr.routinegongbang.app.aaos.AaosVehicleProperties
 import kr.routinegongbang.app.data.FileEngineStore
 import kr.routinegongbang.app.data.FileHabitStore
+import kr.routinegongbang.app.data.FileTrustStore
 import kr.routinegongbang.app.data.RoutineRepository
 import kr.routinegongbang.app.platform.AndroidNotifier
 import kr.routinegongbang.app.platform.Channels
@@ -42,6 +43,8 @@ import kr.routinegongbang.app.pleos.PleosVehicle
 import kr.routinegongbang.app.ui.AppState
 import kr.routinegongbang.app.ui.Texts
 import kr.routinegongbang.app.ui.UiState
+import kr.routinegongbang.app.ui.model.Trust
+import kr.routinegongbang.app.ui.model.TrustLedger
 import kr.routinegongbang.app.ui.DemoExpiry
 import kr.routinegongbang.core.engine.Access
 import kr.routinegongbang.core.engine.ActionPlanner
@@ -107,6 +110,8 @@ class RoutineService : Service() {
     private val habitSaves = Channel<HabitLog>(Channel.CONFLATED)
     /** One writer for routines.json: AtomicFile is not safe for concurrent writers, and the latest list must win. */
     private val routineSaves = Channel<List<Routine>>(Channel.CONFLATED)
+    /** One writer for trust.json, the same way. */
+    private val trustSaves = Channel<TrustLedger>(Channel.CONFLATED)
     @Volatile private var navigating = false
     @Volatile private var realCapability: CapabilitySnapshot? = null
     @Volatile private var debug: DebugController? = null
@@ -239,6 +244,14 @@ class RoutineService : Service() {
         scope.launch(Dispatchers.IO) {
             for (list in routineSaves) runCatching { repository.save(list) }.onFailure { log("routines not saved: ${it.message}") }
         }
+        val trustStore = FileTrustStore(this, prefix)
+        val trust = withContext(Dispatchers.IO) {
+            runCatching { trustStore.load() }.getOrElse { TrustLedger().also { _ -> log("trust not loaded: ${it.message}") } }
+        }
+        scope.launch(Dispatchers.IO) {
+            for (ledger in trustSaves) runCatching { trustStore.save(ledger) }.onFailure { log("trust not saved: ${it.message}") }
+        }
+        val texts = Texts(this)
         var engineRef: RoutineEngine? = null
         var notifierRef: AndroidNotifier? = null
         val controller = RoutineController(
@@ -247,13 +260,25 @@ class RoutineService : Service() {
             saveRoutines = { list -> routineSaves.trySend(list) },
             log = log,
             now = { clock.now().toEpochMilli() },
-            onParkedAgain = { held -> notifierRef?.postDigest(held) },
+            onParkedAgain = { held, receipt ->
+                val routines = AppState.ui.value.routines
+                val lines = receipt?.let { texts.receipt(it) { id -> routines.firstOrNull { r -> r.routine.id == id }?.routine?.limits?.cooldownMinutes ?: 0 } }
+                notifierRef?.postDigest(held, lines.orEmpty())
+            },
+            initialTrust = trust,
+            saveTrust = { ledger -> trustSaves.trySend(ledger) },
+            onTrustEarned = { name -> notifierRef?.tell(getString(R.string.notify_trust_earned, name, Trust.EARNED_AFTER)) },
+            later = { ms, block ->
+                scope.launch {
+                    delay(ms)
+                    block()
+                }
+            },
         )
         val fakeCar = if (fakeMode) FakeVehicle(catalog, clock, FAKE_START_VALUES) else null
         val writer: VehicleWriter = fakeCar ?: vehicle
         val navi: Navigator = if (fakeMode) FakeNavigator() else navigator
         val notifier = AndroidNotifier(this, controller.notices, controller::quiet).also { notifierRef = it }
-        val texts = Texts(this)
         // What a run really did, from its results; posted off the engine coroutine.
         val summaries = RunSummaryObserver(
             routineOf = { id -> AppState.ui.value.routines.firstOrNull { it.routine.id == id }?.routine },
@@ -423,6 +448,7 @@ class RoutineService : Service() {
     private fun startInForeground() {
         val notification = Notification.Builder(this, Channels.SERVICE)
             .setSmallIcon(android.R.drawable.ic_menu_rotate)
+            .setGroup(NoticeText.group("service", FOREGROUND_ID))
             .setContentTitle(getString(R.string.app_name))
             // The car's own notification area says it too while the real routines pause for the demo.
             .setContentText(NoticeText.readable(getString(if (DebugSettings.fakeVehicle(this)) R.string.service_demo else R.string.service_running)))

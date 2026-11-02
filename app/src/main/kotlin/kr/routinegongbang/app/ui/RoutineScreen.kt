@@ -40,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -53,10 +54,12 @@ import kr.routinegongbang.app.BuildConfig
 import kr.routinegongbang.app.R
 import kr.routinegongbang.app.ui.editor.EditorScreen
 import kr.routinegongbang.app.ui.editor.EditorTarget
+import kr.routinegongbang.app.ui.editor.RoutineDraft
 import kr.routinegongbang.app.ui.model.ActionSummary
 import kr.routinegongbang.app.ui.model.ConditionSummary
 import kr.routinegongbang.app.ui.model.Outcome
-import kr.routinegongbang.app.ui.model.Skip
+import kr.routinegongbang.app.ui.model.TripReceipt
+import kr.routinegongbang.app.ui.model.Trust
 import kr.routinegongbang.app.ui.model.StatusView
 import kr.routinegongbang.app.ui.model.TriggerSummary
 import kr.routinegongbang.app.platform.PermissionGate
@@ -138,7 +141,8 @@ private fun Modifier.rightHairline(): Modifier = drawBehind {
 private fun SidePanel(state: UiState, commands: RoutineCommands?, texts: Texts, openDemo: () -> Unit, openDebug: () -> Unit) {
     Brand()
     Telemetry(state.status, state.debug)
-    state.suggestion?.let { SuggestionCard(it, commands, texts) }
+    state.suggestion?.let { SuggestionCard(it, commands, texts, notifyOnly = !state.status.controlOpen && !state.debug.fakeVehicle) }
+    state.receipt?.let { ReceiptCard(it, state.routines, texts) }
     RecentLog(state, texts, max = SIDE_LOG_ENTRIES)
     if (state.debug.demo && !state.debug.fakeVehicle) QuietButton(stringResource(R.string.demo_open), openDemo)
     if (state.debug.available) QuietButton(stringResource(R.string.debug_open), openDebug, color = Palette.TextMuted)
@@ -200,7 +204,7 @@ private fun TelemetryRow(key: String, value: Pair<String, Color>) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun SuggestionCard(suggestion: SuggestionItem, commands: RoutineCommands?, texts: Texts) {
+internal fun SuggestionCard(suggestion: SuggestionItem, commands: RoutineCommands?, texts: Texts, notifyOnly: Boolean = false) {
     val latest by rememberUpdatedState(commands)
     LaunchedEffect(suggestion.tripId, suggestion.routine.id, latest != null) { latest?.suggestionShown() }
     Panel(background = Palette.CopperDim, border = Palette.Copper.copy(alpha = 0.6f)) {
@@ -220,10 +224,60 @@ internal fun SuggestionCard(suggestion: SuggestionItem, commands: RoutineCommand
         }
         Evidence(suggestion.supportingTrips)
         Text(stringResource(R.string.suggestion_body, suggestion.supportingTrips), style = MaterialTheme.typography.bodyMedium, color = Palette.TextMuted)
+        // Adopted, it asks first until the driver has said yes three times (Trust): said before the tap, not after.
+        // Control closed, a habit (a setting) is only told, never asked: then the note would not be true.
+        if (!notifyOnly && RoutineDraft.askingFirst(suggestion.routine).policy.askBeforeRun) {
+            Text(stringResource(R.string.suggestion_asks_first, Trust.EARNED_AFTER), style = MaterialTheme.typography.bodyMedium, color = Palette.Copper)
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             PrimaryButton(stringResource(R.string.suggestion_accept), { commands?.acceptSuggestion() }, enabled = commands != null)
             QuietButton(stringResource(R.string.suggestion_reject), { commands?.rejectSuggestion() }, enabled = commands != null, color = Palette.TextMuted)
         }
+    }
+}
+
+/**
+ * What the routines did on the drive that just ended, one line per routine, done or not and why: a till receipt, torn
+ * along a perforated top edge. It stays until the next trip starts.
+ */
+@Composable
+private fun ReceiptCard(receipt: TripReceipt, routines: List<RoutineItem>, texts: Texts) {
+    Panel(modifier = Modifier.perforated(Palette.OutlineStrong), background = Palette.SurfaceRaised, spacing = 12.dp) {
+        // The side panel is narrow: the title gets the whole line, the drive's time span goes under it.
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                MonoLabel("RECEIPT", Palette.Copper)
+                Spacer(Modifier.width(10.dp))
+                Text(stringResource(R.string.receipt_title), style = MaterialTheme.typography.titleMedium, color = Palette.Text)
+            }
+            MonoLabel(stringResource(R.string.receipt_span, texts.clock(receipt.startedAtMs), texts.clock(receipt.endedAtMs)))
+        }
+        receipt.lines.forEach { line ->
+            val routine = routines.firstOrNull { it.routine.id == line.routineId }?.routine
+            val color = when {
+                line.outcomes.isEmpty() -> Palette.Neutral
+                else -> Palette.of(line.outcomes.firstOrNull { it != Outcome.DONE } ?: Outcome.DONE)
+            }
+            Row(verticalAlignment = Alignment.Top) {
+                Box(Modifier.padding(top = 4.dp)) { Led(color, size = 7.dp) }
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(line.routineName, style = MaterialTheme.typography.bodyLarge, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(texts.receiptLine(line, routine?.limits?.cooldownMinutes ?: 0), style = MaterialTheme.typography.labelMedium, color = Palette.TextMuted)
+                }
+            }
+        }
+    }
+}
+
+/** A row of small punched holes along the top edge, like the tear line of a till roll. Decorative only. */
+private fun Modifier.perforated(color: Color): Modifier = drawWithCache {
+    val radius = 2.5.dp.toPx()
+    val step = 14.dp.toPx()
+    val holes = generateSequence(step / 2) { it + step }.takeWhile { it < size.width }.map { Offset(it, 8.dp.toPx()) }.toList()
+    onDrawWithContent {
+        drawContent()
+        holes.forEach { drawCircle(color, radius = radius, center = it) }
     }
 }
 
@@ -298,6 +352,13 @@ private fun RoutineCard(index: Int, item: RoutineItem, canRun: Boolean, commands
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Tag(texts.trigger(TriggerSummary.of(routine.trigger)), code = "WHEN", accent = true)
                     ConditionSummary.of(routine.condition).forEach { Tag(texts.condition(it), code = "IF") }
+                    // How far an asking routine is from running by itself; one that waits keeps asking (Trust.canEarn).
+                    // Control closed, a setting is only told and nothing is asked: only a route can be asked about then.
+                    val asks = !notifyOnly || routine.actions.any { it is Action.SetDestination }
+                    if (routine.policy.askBeforeRun && asks) {
+                        val label = if (Trust.canEarn(routine)) stringResource(R.string.trust_asking, item.trustYes, Trust.EARNED_AFTER) else stringResource(R.string.editor_ask_first)
+                        Tag(label, code = "ASK")
+                    }
                 }
             }
             Spacer(Modifier.width(16.dp))
@@ -310,7 +371,7 @@ private fun RoutineCard(index: Int, item: RoutineItem, canRun: Boolean, commands
                 Led(Palette.Neutral, size = 8.dp)
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    stringResource(R.string.skip_line, texts.skip(skip, routine.limits.cooldownMinutes), texts.ago(skip.atEpochMs, nowMs)),
+                    stringResource(R.string.skip_line, texts.skip(skip.kind, routine.limits.cooldownMinutes), texts.ago(skip.atEpochMs, nowMs)),
                     style = MaterialTheme.typography.bodyMedium,
                     color = Palette.TextMuted,
                 )
@@ -472,16 +533,8 @@ internal fun RecentLog(state: UiState, texts: Texts, max: Int) {
         if (entries.isEmpty()) Text(stringResource(R.string.log_empty), style = MaterialTheme.typography.bodyMedium, color = Palette.TextMuted)
         entries.forEach { entry ->
             val routine = state.routines.firstOrNull { it.routine.id == entry.routineId }?.routine
-            val (summary, color) = if (entry.skip != null) {
-                stringResource(R.string.log_skipped) + " · " + texts.skip(Skip(entry.skip, entry.atEpochMs), routine?.limits?.cooldownMinutes ?: 0) to Palette.Neutral
-            } else {
-                // The first reason, if any: the demo's "told: control not open" then "done" needs the why.
-                val reason = entry.results.firstNotNullOfOrNull { StatusView.of(it).reason }?.let { texts.reason(it) }
-                // A test run (지금 실행해보기, or asked by voice) is not one the car's situation started.
-                val dryRun = stringResource(R.string.badge_dry_run).takeIf { entry.dryRun }
-                listOfNotNull(dryRun, texts.outcomeCounts(entry.outcomes), reason).joinToString(" · ") to
-                    Palette.of(entry.outcomes.firstOrNull { it != Outcome.DONE } ?: Outcome.DONE)
-            }
+            val summary = texts.logLine(entry, routine?.limits?.cooldownMinutes ?: 0)
+            val color = if (entry.skip != null) Palette.Neutral else Palette.of(entry.outcomes.firstOrNull { it != Outcome.DONE } ?: Outcome.DONE)
             Row(verticalAlignment = Alignment.Top) {
                 Text(texts.clock(entry.atEpochMs), style = Mono.Label, color = Palette.TextFaint, modifier = Modifier.width(LOG_TIME_WIDTH).padding(top = 4.dp))
                 Box(Modifier.padding(top = 4.dp)) { Led(color, size = 7.dp) }

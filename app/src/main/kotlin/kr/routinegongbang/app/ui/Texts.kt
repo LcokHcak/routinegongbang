@@ -9,6 +9,8 @@ import kr.routinegongbang.app.ui.model.RunSummary
 import kr.routinegongbang.app.ui.model.Skip
 import kr.routinegongbang.app.ui.model.Status
 import kr.routinegongbang.app.ui.model.StatusView
+import kr.routinegongbang.app.ui.model.RunLogEntry
+import kr.routinegongbang.app.ui.model.TripReceipt
 import kr.routinegongbang.app.ui.model.TriggerSummary
 import kr.routinegongbang.core.engine.Reason
 import kr.routinegongbang.core.model.CompareOp
@@ -113,6 +115,27 @@ internal class Texts(private val context: Context) {
     fun outcomeCounts(outcomes: List<Outcome>): String =
         outcomes.groupingBy { it }.eachCount().entries.joinToString(" · ") { (outcome, count) -> "${outcome(outcome)} $count" }
 
+    /** A line of the recent log under the routine's name: why it was skipped, or how its run went and the first reason. */
+    fun logLine(entry: RunLogEntry, cooldownMinutes: Int): String = entry.skip?.let { s(R.string.log_skipped) + " · " + skip(it, cooldownMinutes) }
+        ?: listOfNotNull(
+            // A test run (지금 실행해보기, or asked by voice) is not one the car's situation started.
+            s(R.string.badge_dry_run).takeIf { entry.dryRun },
+            outcomeCounts(entry.outcomes),
+            // The first reason, if any: the demo's "told: control not open" then "done" needs the why.
+            entry.results.firstNotNullOfOrNull { StatusView.of(it).reason }?.let { reason(it) },
+        ).joinToString(" · ")
+
+    /** One routine of a trip receipt: how its runs went, then how often it was skipped and the last reason why. */
+    fun receiptLine(line: TripReceipt.Line, cooldownMinutes: Int): String = listOfNotNull(
+        line.outcomes.takeIf { it.isNotEmpty() }?.let { outcomeCounts(it) },
+        line.reason?.let { reason(it) },
+        line.skips.lastOrNull()?.let { s(R.string.receipt_skipped, line.skips.size, skip(it, cooldownMinutes)) },
+    ).joinToString(" · ")
+
+    /** The receipt for the notification: "이름 · 했어요 2", one per routine; [cooldownOf] is each routine's cooldown. */
+    fun receipt(receipt: TripReceipt, cooldownOf: (String) -> Int): List<String> =
+        receipt.lines.map { "${it.routineName} · ${receiptLine(it, cooldownOf(it.routineId))}" }
+
     /** The one line under it: the reason when there is one, otherwise what this result means, if it needs saying. */
     fun detail(view: StatusView): String? = if (view.navigation) s(R.string.reason_navi_failed) else view.reason?.let { reason(it) } ?: when (view.status) {
         Status.ALREADY_SET -> s(R.string.result_already_set)
@@ -126,7 +149,7 @@ internal class Texts(private val context: Context) {
     }
 
     /** Why a routine did not run when its trigger came; [cooldownMinutes] is the routine's own cooldown. */
-    fun skip(skip: Skip, cooldownMinutes: Int): String = when (skip.kind) {
+    fun skip(kind: Skip.Kind, cooldownMinutes: Int): String = when (kind) {
         Skip.Kind.CONDITION -> s(R.string.skip_condition)
         Skip.Kind.NOT_READ_YET -> s(R.string.skip_not_read_yet)
         Skip.Kind.COOLDOWN -> s(R.string.skip_cooldown, cooldownMinutes)

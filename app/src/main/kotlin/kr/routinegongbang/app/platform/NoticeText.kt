@@ -19,6 +19,13 @@ internal object NoticeText {
     fun readable(text: CharSequence): CharSequence =
         SpannableString(text).apply { setSpan(ForegroundColorSpan(BODY_COLOR), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
 
+    /**
+     * A group of its own for one notification. With two or more ungrouped notices the system folds them under a summary
+     * of its own, and the centre draws that summary's body in #333333 whatever span the notice has (measured on the
+     * emulator); the system never folds notifications that name a group.
+     */
+    fun group(kind: String, id: Int): String = "kr.routinegongbang.$kind.$id"
+
     /** The WCAG contrast ratio of two opaque colours (1 to 21). */
     fun contrast(a: Int, b: Int): Double {
         val (la, lb) = luminance(a) to luminance(b)

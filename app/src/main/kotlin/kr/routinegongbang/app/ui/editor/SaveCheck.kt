@@ -60,7 +60,7 @@ class SaveCheck(private val catalog: SignalCatalog) {
             add(Problem(Problem.Level.WARNING, R.string.editor_warn_navi_place))
             // Getting in or out happens parked; any other trigger may come while driving, where a route is set at once
             // unless the routine asks first (ActionPlanner.planDestination).
-            val mayFireWhileDriving = routine.trigger !in setOf(Trigger.RideStart, Trigger.RideEnd, EditorCatalog.trigger(TriggerChoice.PARKED))
+            val mayFireWhileDriving = routine.trigger !in EditorCatalog.parkedMoments
             if (mayFireWhileDriving && !routine.policy.askBeforeRun && !routine.policy.confirmWhileDriving) {
                 add(Problem(Problem.Level.WARNING, R.string.editor_warn_navi_driving))
             }

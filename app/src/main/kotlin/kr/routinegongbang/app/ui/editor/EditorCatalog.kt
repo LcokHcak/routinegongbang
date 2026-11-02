@@ -48,6 +48,9 @@ object EditorCatalog {
         TriggerChoice.BATTERY_LOW -> Trigger.Threshold(SignalIds.EV_SOC, CompareOp.LE, SignalValue.of(20))
     }
 
+    /** Getting in, shifting to P, getting out: the moments a routine starts while the car is parked. */
+    val parkedMoments: Set<Trigger> by lazy { setOf(Trigger.RideStart, Trigger.RideEnd, trigger(TriggerChoice.PARKED)) }
+
     fun choiceOf(trigger: Trigger): TriggerChoice? = when (trigger) {
         Trigger.RideStart -> TriggerChoice.RIDE_START
         Trigger.RideEnd -> TriggerChoice.RIDE_END
@@ -145,7 +148,7 @@ object EditorCatalog {
                 // Parking at a light and again at home within minutes need not say it twice.
                 limits = Limits(cooldownMinutes = WINDOW_CHECK_COOLDOWN_MINUTES),
             )
-        }.copy(origin = Origin.TEMPLATE)
+        }.copy(origin = Origin.TEMPLATE).let(RoutineDraft::askingFirst)
     }
 }
 

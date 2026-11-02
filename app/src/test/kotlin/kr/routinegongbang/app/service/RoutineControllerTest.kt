@@ -3,7 +3,9 @@ package kr.routinegongbang.app.service
 import kr.routinegongbang.app.ui.AppState
 import kr.routinegongbang.app.ui.UiState
 import kr.routinegongbang.app.ui.model.Skip
+import kr.routinegongbang.core.engine.Decision
 import kr.routinegongbang.core.engine.DrivingState
+import kr.routinegongbang.core.engine.ExecutionReport
 import kr.routinegongbang.core.engine.EngineEvent
 import kr.routinegongbang.core.engine.Gear
 import kr.routinegongbang.core.habit.FeedbackKind
@@ -284,7 +286,7 @@ class RoutineControllerTest {
     @Test
     fun `while driving it is quiet, and parking releases what was held`() {
         val released = mutableListOf<List<String>>()
-        val controller = RoutineController(catalog, emptyList(), habits(), post = {}, saveRoutines = {}, log = {}, now = { now }, onParkedAgain = { released += it.texts })
+        val controller = RoutineController(catalog, emptyList(), habits(), post = {}, saveRoutines = {}, log = {}, now = { now }, onParkedAgain = { notices, _ -> released += notices.texts })
         controller.onDriving(driving)
         assertTrue(controller.quiet())
         controller.notices.offer("a", controller::quiet)
@@ -297,7 +299,7 @@ class RoutineControllerTest {
     fun `when the driving state turns unknown, what was held comes out too`() {
         // New notices go out at once, so the held ones must not wait for a parking that might never be seen.
         val released = mutableListOf<List<String>>()
-        val controller = RoutineController(catalog, emptyList(), habits(), post = {}, saveRoutines = {}, log = {}, now = { now }, onParkedAgain = { released += it.texts })
+        val controller = RoutineController(catalog, emptyList(), habits(), post = {}, saveRoutines = {}, log = {}, now = { now }, onParkedAgain = { notices, _ -> released += notices.texts })
         controller.onDriving(driving)
         controller.notices.offer("a", controller::quiet)
         controller.onDriving(DrivingState(null, null, null))
@@ -306,7 +308,7 @@ class RoutineControllerTest {
 
     @Test
     fun `a notice held while driving says so on the card, and counts as told once parked`() {
-        val controller = RoutineController(catalog, listOf(rain), habits(), post = {}, saveRoutines = {}, log = {}, now = { now }, onParkedAgain = {})
+        val controller = RoutineController(catalog, listOf(rain), habits(), post = {}, saveRoutines = {}, log = {}, now = { now }, onParkedAgain = { _, _ -> })
         controller.onDriving(driving)
         controller.onDecision(ran("rain", kr.routinegongbang.core.engine.ActionResult.Notified(null, held = true)))
         assertEquals(listOf(kr.routinegongbang.app.ui.model.Outcome.IN_PROGRESS), item("rain").lastRun!!.results.map { kr.routinegongbang.app.ui.model.StatusView.of(it).outcome })
@@ -327,7 +329,7 @@ class RoutineControllerTest {
     fun `a new demo story does not bring the previous story's held notices`() {
         // d1 ends while driving; the next story's parking must not post d1's summary as a digest.
         val released = mutableListOf<List<String>>()
-        val controller = RoutineController(catalog, emptyList(), habits(), post = {}, saveRoutines = {}, log = {}, now = { now }, onParkedAgain = { released += it.texts })
+        val controller = RoutineController(catalog, emptyList(), habits(), post = {}, saveRoutines = {}, log = {}, now = { now }, onParkedAgain = { notices, _ -> released += notices.texts })
         controller.onDriving(driving)
         controller.notices.offer("d1", controller::quiet)
         controller.replaceAll(listOf(rain))
@@ -337,7 +339,7 @@ class RoutineControllerTest {
 
     @Test
     fun `a failing digest does not stop the parked suggestion`() {
-        val controller = RoutineController(catalog, emptyList(), habits(), post = {}, saveRoutines = {}, log = {}, now = { now }, onParkedAgain = { error("boom") })
+        val controller = RoutineController(catalog, emptyList(), habits(), post = {}, saveRoutines = {}, log = {}, now = { now }, onParkedAgain = { _, _ -> error("boom") })
         controller.onDriving(driving)
         controller.notices.offer("a", controller::quiet)
         controller.onDriving(parked)
@@ -349,6 +351,233 @@ class RoutineControllerTest {
         val controller = RoutineController(catalog, emptyList(), habits(), post = {}, saveRoutines = {}, log = {}, now = { now })
         controller.onDriving(DrivingState(null, null, null))
         assertTrue(!controller.quiet())
+    }
+
+    // --- Trust the driver gives: ask first, then by itself after three yeses in a row ---
+
+    private val asking = rain.copy(id = "ask", name = "추운 아침", policy = kr.routinegongbang.core.model.Policy(askBeforeRun = true))
+    private val sent = kr.routinegongbang.core.engine.ActionResult.Sent(SignalIds.DEFROSTER_FRONT)
+
+    @Test
+    fun `three allowed runs in a row and the routine runs by itself, and the driver is told`() {
+        val earned = mutableListOf<String>()
+        val ledgers = mutableListOf<kr.routinegongbang.app.ui.model.TrustLedger>()
+        val controller = RoutineController(catalog, listOf(asking), habits(), post = {}, saveRoutines = {}, log = {}, now = { now },
+            saveTrust = { ledgers += it }, onTrustEarned = { earned += it })
+        controller.onDecision(ran("ask", sent))
+        controller.onDecision(ran("ask", sent))
+        assertEquals(2, item("ask").trustYes)
+        assertTrue(item("ask").routine.policy.askBeforeRun)
+        controller.onDecision(ran("ask", sent))
+        assertTrue(!item("ask").routine.policy.askBeforeRun)
+        assertEquals(listOf("추운 아침"), earned)
+        assertEquals(0, ledgers.last().count("ask"))
+    }
+
+    @Test
+    fun `a refused question starts the count again`() {
+        val controller = RoutineController(catalog, listOf(asking), habits(), post = {}, saveRoutines = {}, log = {}, now = { now })
+        controller.onDecision(ran("ask", sent))
+        controller.onDecision(ran("ask", kr.routinegongbang.core.engine.ActionResult.Cancelled(kr.routinegongbang.core.engine.Reason.CONFIRM_DECLINED)))
+        assertEquals(0, item("ask").trustYes)
+    }
+
+    @Test
+    fun `the count survives a restart`() {
+        val ledger = kr.routinegongbang.app.ui.model.TrustLedger().afterYes("ask").first
+        RoutineController(catalog, listOf(asking), habits(), post = {}, saveRoutines = {}, log = {}, now = { now }, initialTrust = ledger)
+        assertEquals(1, item("ask").trustYes)
+    }
+
+    @Test
+    fun `changing what a routine does forgets the trust it had earned`() {
+        val controller = RoutineController(catalog, listOf(asking), habits(), post = {}, saveRoutines = {}, log = {}, now = { now })
+        controller.onDriving(parked)
+        controller.onDecision(ran("ask", sent))
+        val other = kr.routinegongbang.core.model.Action.Write(SignalIds.STEERING_WHEEL_HEAT, SignalValue.of(1))
+        assertTrue(controller.saveRoutine(asking.copy(actions = listOf(other))).canSave)
+        assertEquals(0, item("ask").trustYes)
+    }
+
+    @Test
+    fun `an adopted habit starts by asking first`() {
+        val controller = controller(habits())
+        controller.onDriving(parked)
+        controller.refreshSuggestion()
+        assertNotNull(AppState.ui.value.suggestion)
+        controller.acceptSuggestion()
+        assertTrue(AppState.ui.value.routines.single().routine.policy.askBeforeRun)
+    }
+
+    @Test
+    fun `switching a routine off or deleting it forgets its count too, and a demo script starts all counts afresh`() {
+        val other = asking.copy(id = "ask2")
+        val ledgers = mutableListOf<kr.routinegongbang.app.ui.model.TrustLedger>()
+        val controller = RoutineController(catalog, listOf(asking, other), habits(), post = {}, saveRoutines = {}, log = {}, now = { now },
+            saveTrust = { ledgers += it })
+        controller.onDriving(parked)
+        controller.onDecision(ran("ask", sent))
+        controller.onDecision(Decision.Ran(ExecutionReport("ask2", listOf(sent), state, false, false)))
+        controller.setEnabled("ask", false)
+        assertEquals(0, item("ask").trustYes)
+        assertEquals(1, item("ask2").trustYes)
+        controller.deleteRoutine("ask2")
+        assertEquals(0, ledgers.last().count("ask2"))
+        controller.onDecision(ran("ask", sent))
+        controller.replaceAll(listOf(asking))
+        assertEquals(0, item("ask").trustYes)
+    }
+
+    @Test
+    fun `a no after a wait starts the count again`() {
+        val controller = RoutineController(catalog, listOf(asking), habits(), post = {}, saveRoutines = {}, log = {}, now = { now })
+        controller.onDecision(ran("ask", sent))
+        controller.onResult(kr.routinegongbang.core.engine.ResultUpdate("ask", 0, kr.routinegongbang.core.engine.ActionResult.Cancelled(kr.routinegongbang.core.engine.Reason.CONFIRM_TIMEOUT), 0))
+        assertEquals(0, item("ask").trustYes)
+    }
+
+    @Test
+    fun `a notice that fails to show does not keep the routine asking`() {
+        val controller = RoutineController(catalog, listOf(asking), habits(), post = {}, saveRoutines = {}, log = {}, now = { now },
+            onTrustEarned = { error("no notification manager") })
+        repeat(3) { controller.onDecision(ran("ask", sent)) }
+        assertTrue(!item("ask").routine.policy.askBeforeRun)
+    }
+
+    // --- The trip receipt: at P after a drive, what every routine did ---
+
+    private val windowCheck = rain.copy(id = "window", name = "창문 확인")
+
+    /** A controller whose delayed work ([RoutineController] `later`) runs only when the test says so. */
+    private fun receiptController(receipts: MutableList<kr.routinegongbang.app.ui.model.TripReceipt?>, later: MutableList<() -> Unit>, released: MutableList<String> = mutableListOf()) =
+        RoutineController(catalog, listOf(rain, windowCheck), habits(), post = {}, saveRoutines = {}, log = {}, now = { now },
+            onParkedAgain = { notices, receipt ->
+                released += notices.texts
+                receipts += receipt
+            },
+            later = { _, block -> later += block })
+
+    @Test
+    fun `a routine that starts at P is on the receipt too, which waits a moment after parking`() {
+        val receipts = mutableListOf<kr.routinegongbang.app.ui.model.TripReceipt?>()
+        val later = mutableListOf<() -> Unit>()
+        val controller = receiptController(receipts, later)
+        controller.onTripStarted("t9", Instant.ofEpochMilli(now))
+        controller.onDriving(driving)
+        now += 60_000
+        controller.onDecision(ran("rain", sent))
+        now += 60_000
+        controller.onDriving(parked)
+        assertTrue(receipts.isEmpty(), "not at the instant of P: a parked trigger holds a few seconds")
+        now += 5_000
+        controller.onDecision(ran("window", sent))
+        later.single()()
+        assertEquals(listOf("비 오는 날", "창문 확인"), receipts.single()!!.entries.map { it.routineName })
+    }
+
+    @Test
+    fun `moving again before the receipt goes out keeps it, and the held notices, for the next stop`() {
+        val receipts = mutableListOf<kr.routinegongbang.app.ui.model.TripReceipt?>()
+        val later = mutableListOf<() -> Unit>()
+        val released = mutableListOf<String>()
+        val controller = receiptController(receipts, later, released)
+        controller.onTripStarted("t9", Instant.ofEpochMilli(now))
+        controller.onDriving(driving)
+        controller.notices.offer("우산 챙기세요") { controller.quiet() }
+        now += 60_000
+        controller.onDecision(ran("rain", sent))
+        controller.onDriving(parked)
+        controller.onDriving(driving)
+        later.removeAt(0)()
+        assertTrue(receipts.isEmpty(), "nothing goes out while the car is moving")
+        now += 60_000
+        controller.onDecision(ran("window", sent))
+        now += 60_000
+        controller.onDriving(parked)
+        later.single()()
+        assertEquals(listOf("비 오는 날", "창문 확인"), receipts.single()!!.entries.map { it.routineName })
+        assertEquals(listOf("우산 챙기세요"), released)
+    }
+
+    @Test
+    fun `when the car's state turns unknown the held notices come out, and the receipt waits for P`() {
+        val receipts = mutableListOf<kr.routinegongbang.app.ui.model.TripReceipt?>()
+        val later = mutableListOf<() -> Unit>()
+        val released = mutableListOf<String>()
+        val controller = receiptController(receipts, later, released)
+        controller.onTripStarted("t9", Instant.ofEpochMilli(now))
+        controller.onDriving(driving)
+        controller.notices.offer("우산 챙기세요") { controller.quiet() }
+        now += 60_000
+        controller.onDecision(ran("rain", sent))
+        controller.onDriving(DrivingState(null, null, null))
+        later.removeAt(0)()
+        assertEquals(listOf("우산 챙기세요"), released)
+        assertEquals(listOf<kr.routinegongbang.app.ui.model.TripReceipt?>(null), receipts)
+        controller.onDriving(parked)
+        later.single()()
+        assertEquals(listOf("비 오는 날"), receipts.last()!!.entries.map { it.routineName })
+    }
+
+    @Test
+    fun `with no drive there is no receipt, even after a routine ran at getting in`() {
+        val receipts = mutableListOf<kr.routinegongbang.app.ui.model.TripReceipt?>()
+        val later = mutableListOf<() -> Unit>()
+        val controller = receiptController(receipts, later)
+        controller.onTripStarted("t9", Instant.ofEpochMilli(now))
+        controller.onDecision(ran("rain", sent))
+        controller.onDriving(parked)
+        later.forEach { it() }
+        assertTrue(receipts.isEmpty())
+    }
+
+    @Test
+    fun `a stop after a receipt starts the next one, and a demo script clears the card`() {
+        val receipts = mutableListOf<kr.routinegongbang.app.ui.model.TripReceipt?>()
+        val later = mutableListOf<() -> Unit>()
+        val controller = receiptController(receipts, later)
+        controller.onTripStarted("t9", Instant.ofEpochMilli(now))
+        controller.onDriving(driving)
+        controller.onDecision(ran("rain", sent))
+        controller.onDriving(parked)
+        later.removeAt(0)()
+        controller.onDriving(driving)
+        now += 60_000
+        controller.onDecision(ran("window", sent))
+        controller.onDriving(parked)
+        later.removeAt(0)()
+        assertEquals(listOf(listOf("비 오는 날"), listOf("창문 확인")), receipts.map { r -> r!!.entries.map { it.routineName } })
+        controller.replaceAll(listOf(rain))
+        assertNull(AppState.ui.value.receipt)
+    }
+
+    @Test
+    fun `parking after a drive gives the trip's receipt, and the next trip clears it`() {
+        val receipts = mutableListOf<kr.routinegongbang.app.ui.model.TripReceipt?>()
+        val controller = RoutineController(catalog, listOf(rain), habits(), post = {}, saveRoutines = {}, log = {}, now = { now },
+            onParkedAgain = { _, receipt -> receipts += receipt })
+        controller.onTripStarted("t9", Instant.ofEpochMilli(now))
+        controller.onDriving(driving)
+        now += 60_000
+        controller.onDecision(ran("rain", sent))
+        now += 60_000
+        controller.onDriving(parked)
+        assertEquals(listOf("비 오는 날"), receipts.single()!!.entries.map { it.routineName })
+        assertEquals(listOf("비 오는 날"), AppState.ui.value.receipt!!.entries.map { it.routineName })
+        controller.onTripStarted("t10", Instant.ofEpochMilli(now))
+        assertNull(AppState.ui.value.receipt)
+    }
+
+    @Test
+    fun `a drive where nothing ran gives no receipt`() {
+        val receipts = mutableListOf<kr.routinegongbang.app.ui.model.TripReceipt?>()
+        val controller = RoutineController(catalog, listOf(rain), habits(), post = {}, saveRoutines = {}, log = {}, now = { now },
+            onParkedAgain = { _, receipt -> receipts += receipt })
+        controller.onTripStarted("t9", Instant.ofEpochMilli(now))
+        controller.onDriving(driving)
+        controller.onDriving(parked)
+        assertTrue(receipts.isEmpty())
+        assertNull(AppState.ui.value.receipt)
     }
 
     @Test

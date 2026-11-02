@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.AtomicFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kr.routinegongbang.app.ui.model.TrustLedger
 import kr.routinegongbang.core.engine.EngineSnapshot
 import kr.routinegongbang.core.engine.EngineSnapshotJson
 import kr.routinegongbang.core.engine.EngineStore
@@ -69,6 +70,18 @@ class FileHabitStore(context: Context, prefix: String = "") {
     }
 
     fun save(log: HabitLog) = file.write(HabitLogJson.encode(log))
+}
+
+/** The yeses in a row per asking routine (Trust); a corrupt file is quarantined and the counts start afresh. */
+internal class FileTrustStore(context: Context, prefix: String = "") {
+    private val file = TextFile(File(context.filesDir, prefix + "trust.json"))
+
+    fun load(): TrustLedger {
+        val text = file.read() ?: return TrustLedger()
+        return TrustLedger.decodeOrNull(text) ?: TrustLedger().also { file.quarantine() }
+    }
+
+    fun save(ledger: TrustLedger) = file.write(ledger.encode())
 }
 
 /**

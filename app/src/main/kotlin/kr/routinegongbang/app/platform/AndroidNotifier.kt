@@ -61,22 +61,37 @@ internal class AndroidNotifier(
         return true
     }
 
-    /** The notices held during a drive, in one notification once parked, saying how many a long drive left out. */
-    fun postDigest(released: NoticeHold.Released) {
+    /**
+     * Once parked: the trip's receipt (one line per routine, done or not and why) and the notices held during the drive,
+     * each its own short notification with its heading as the title ([NoticeLines]: the centre greys out a body it has to
+     * cut). What does not fit is counted; the app's receipt card has it all.
+     */
+    fun postDigest(released: NoticeHold.Released, receipt: List<String> = emptyList()) {
+        if (receipt.isNotEmpty()) post(receipt, title = context.getString(R.string.receipt_title))
         if (released.isEmpty) return
-        val more = released.dropped.takeIf { it > 0 }?.let { context.getString(R.string.notify_digest_more, it) }
-        post(context.getString(R.string.notify_digest_title) + "\n" + (released.texts.map { "· $it" } + listOfNotNull(more)).joinToString("\n"))
+        post(released.texts, title = context.getString(R.string.notify_digest_title), hidden = released.dropped)
     }
 
-    private fun post(text: String) {
+    /** A notice of the app's own, not of a routine: it waits for parking like any other. */
+    fun tell(text: String) {
+        val showNow = if (hold == null) text else hold.offer(text, quiet) ?: return
+        post(showNow)
+    }
+
+    private fun post(text: String) = post(text.lines())
+
+    private fun post(lines: List<String>, title: String = context.getString(R.string.app_name), hidden: Int = 0) {
+        val body = NoticeLines.fit(lines, { context.getString(R.string.notify_more, it) }, hidden).joinToString("\n")
+        val id = ids.incrementAndGet()
         val notification = Notification.Builder(context, Channels.ROUTINES)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(context.getString(R.string.app_name))
-            .setContentText(NoticeText.readable(text))
-            .setStyle(Notification.BigTextStyle().bigText(NoticeText.readable(text)))
+            .setGroup(NoticeText.group("notice", id))
+            .setContentTitle(title)
+            .setContentText(NoticeText.readable(body))
+            .setStyle(Notification.BigTextStyle().bigText(NoticeText.readable(body)))
             .setAutoCancel(true)
             .build()
-        context.getSystemService(NotificationManager::class.java).notify(ids.incrementAndGet(), notification)
+        context.getSystemService(NotificationManager::class.java).notify(id, notification)
     }
 
     private fun text(message: NotifyMessage): String {
@@ -171,9 +186,11 @@ internal class NotificationConfirmer(private val context: Context, private val q
             Intent(action).setPackage(context.packageName).putExtra(EXTRA_YES, yes),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val what = content.lines.joinToString(" · ")
+        // The question stays on screen until answered: it must stay readable too (NoticeLines).
+        val what = NoticeLines.fit(content.lines, { context.getString(R.string.notify_more, it) }).joinToString("\n")
         return Notification.Builder(context, Channels.ROUTINES)
             .setSmallIcon(R.drawable.ic_notification)
+            .setGroup(NoticeText.group("confirm", id))
             .setContentTitle(context.getString(R.string.confirm_title, content.routineName))
             .setContentText(NoticeText.readable(what))
             .setStyle(Notification.BigTextStyle().bigText(NoticeText.readable(what)).setSummaryText(NoticeText.readable(context.getString(R.string.confirm_timeout_hint))))

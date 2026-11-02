@@ -8,6 +8,7 @@ import kr.routinegongbang.app.ui.editor.CheckResult
 import kr.routinegongbang.app.ui.model.LastRun
 import kr.routinegongbang.app.ui.model.RunLogEntry
 import kr.routinegongbang.app.ui.model.Skip
+import kr.routinegongbang.app.ui.model.TripReceipt
 import kr.routinegongbang.core.habit.HabitPattern
 import kr.routinegongbang.core.model.Routine
 
@@ -23,7 +24,8 @@ data class VehicleStatus(
     val emulator: Boolean = false,
 )
 
-data class RoutineItem(val routine: Routine, val lastRun: LastRun?, val lastSkip: Skip? = null)
+/** [trustYes]: the yeses in a row a routine that asks first has heard (Trust). */
+data class RoutineItem(val routine: Routine, val lastRun: LastRun?, val lastSkip: Skip? = null, val trustYes: Int = 0)
 
 data class SuggestionItem(val tripId: String, val pattern: HabitPattern, val routine: Routine, val supportingTrips: Int)
 
@@ -34,6 +36,8 @@ data class UiState(
     val debug: DebugState = DebugState(),
     /** Recent runs and skips, newest first (RunLog). */
     val log: List<RunLogEntry> = emptyList(),
+    /** What the routines did on the drive that just ended; cleared when the next trip starts. */
+    val receipt: TripReceipt? = null,
 )
 
 /** Simulated capability presets of the debug panel (results are labelled "모의"). */

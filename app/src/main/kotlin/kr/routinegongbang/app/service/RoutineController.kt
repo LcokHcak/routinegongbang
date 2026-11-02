@@ -8,10 +8,14 @@ import kr.routinegongbang.app.ui.RoutineItem
 import kr.routinegongbang.app.ui.SuggestionItem
 import kr.routinegongbang.app.ui.editor.CheckResult
 import kr.routinegongbang.app.ui.editor.Problem
+import kr.routinegongbang.app.ui.editor.RoutineDraft
 import kr.routinegongbang.app.ui.editor.SaveCheck
 import kr.routinegongbang.app.ui.model.RunHistory
 import kr.routinegongbang.app.ui.model.RunLog
 import kr.routinegongbang.app.ui.model.Skip
+import kr.routinegongbang.app.ui.model.TripReceipt
+import kr.routinegongbang.app.ui.model.Trust
+import kr.routinegongbang.app.ui.model.TrustLedger
 import kr.routinegongbang.app.ui.model.heldShown
 import kr.routinegongbang.core.engine.Decision
 import kr.routinegongbang.core.engine.DrivingState
@@ -27,6 +31,7 @@ import kr.routinegongbang.core.model.SafetyClass
 import kr.routinegongbang.core.model.SignalCatalog
 import kr.routinegongbang.core.model.ValidatedRoutine
 import kr.routinegongbang.core.model.ValidationOutcome
+import java.time.Instant
 
 /**
  * Turns screen commands into engine events and engine results into [AppState]. Called from the UI thread
@@ -42,8 +47,18 @@ internal class RoutineController(
     private val saveRoutines: (List<Routine>) -> Unit,
     private val log: (String) -> Unit,
     private val now: () -> Long = System::currentTimeMillis,
-    /** Notices held while driving, released when parked again or when the state turns unknown. */
-    private val onParkedAgain: (NoticeHold.Released) -> Unit = {},
+    /**
+     * Notices held while driving, released when parked again or when the state turns unknown, with the receipt of what
+     * the routines did on the drive (only at P after a drive; null when nothing ran or was skipped).
+     */
+    private val onParkedAgain: (NoticeHold.Released, TripReceipt?) -> Unit = { _, _ -> },
+    /** The yeses in a row each asking routine has heard, as last saved. */
+    initialTrust: TrustLedger = TrustLedger(),
+    private val saveTrust: (TrustLedger) -> Unit = {},
+    /** A routine heard its third yes in a row and runs by itself from now on; the driver is told, with its name. */
+    private val onTrustEarned: (String) -> Unit = {},
+    /** Runs the block after the delay, off the caller's thread; tests run it when they choose. */
+    private val later: (Long, () -> Unit) -> Unit = { _, block -> block() },
 ) : RoutineCommands, EngineObserver {
 
     /**
@@ -61,6 +76,15 @@ internal class RoutineController(
     private var runLog = RunLog()
     private var parked = false
     private var drivingKnown = false
+    private var trust = initialTrust
+    /** Where the next receipt starts: the trip's start, or just after the last receipt of a trip with several stops. */
+    private var receiptFrom: Long? = null
+    /** The car moved since the last receipt: getting in and out without driving is no trip. */
+    private var drove = false
+    /** Released notices still waiting for the receipt they go out with. */
+    private var pendingHeld: NoticeHold.Released? = null
+    /** Counts the stops; a delivery scheduled for an earlier stop does nothing. */
+    private var stops = 0L
     /** The card hidden by driving off; parked again on the same trip, it comes back (a short move would otherwise lose it). */
     private var hidden: SuggestionItem? = null
 
@@ -87,9 +111,15 @@ internal class RoutineController(
                 )
             }
             becameParked = state.isParked && !was
-            wasQuiet && !quietLocked()
+            if (!wasQuiet && quietLocked()) {
+                drove = true
+                // Started mid-drive (no trip seen): the receipt starts here.
+                if (receiptFrom == null) receiptFrom = now()
+            }
+            // Parked, or no longer known to be moving (otherwise held notices would wait for a parking never seen);
+            // and P after a state that was not known, which still ends a drive.
+            (wasQuiet && !quietLocked()) || (becameParked && drove)
         }
-        // Parked, or no longer known to be moving (otherwise held notices would wait for a parking never seen).
         if (quietEnded) releaseHeld()
         if (becameParked) refreshSuggestion()
     }
@@ -101,14 +131,50 @@ internal class RoutineController(
 
     private fun releaseHeld() {
         val released = notices.release()
-        synchronized(lock) {
+        val stop = synchronized(lock) {
             history = history.withHeldShown()
             runLog = runLog.withHeldShown()
             publishLocked()
+            pendingHeld = pendingHeld?.let { it + released } ?: released
+            ++stops
         }
-        if (released.isEmpty) return
+        // A routine that starts at P (its trigger holds a few seconds, or it waits for the driver's answer) belongs
+        // on this receipt too, so the receipt and the held notices go out together a moment later.
+        later(RECEIPT_GRACE_MS) { deliverReceipt(stop) }
+    }
+
+    /**
+     * The held notices, with the receipt of the drive when the car is at P. Moving again before then keeps both for
+     * the next stop: nothing goes out while driving. With the state unknown, the notices go out and the receipt waits.
+     */
+    private fun deliverReceipt(stop: Long) {
+        val (held, receipt) = synchronized(lock) {
+            if (stop != stops || quietLocked()) return
+            val receipt = if (parked && drove) {
+                val end = now()
+                receiptFrom?.let { TripReceipt.of(runLog.entries, it, end) }.also {
+                    // A trip with several stops: each receipt says what happened since the last one.
+                    receiptFrom = end + 1
+                    drove = false
+                }
+            } else {
+                null
+            }
+            if (receipt != null) AppState.update { it.copy(receipt = receipt) }
+            val held = pendingHeld ?: NoticeHold.Released(emptyList(), 0)
+            pendingHeld = null
+            held to receipt
+        }
+        if (held.isEmpty && receipt == null) return
         // The digest must not keep the parked suggestion from showing.
-        runCatching { onParkedAgain(released) }.onFailure { log("held notices not shown: ${it.message}") }
+        runCatching { onParkedAgain(held, receipt) }.onFailure { log("held notices not shown: ${it.message}") }
+    }
+
+    /** A new trip: its receipt starts now, and the last trip's leaves the screen. */
+    override fun onTripStarted(tripId: String, at: Instant) = synchronized(lock) {
+        receiptFrom = at.toEpochMilli()
+        drove = false
+        AppState.update { it.copy(receipt = null) }
     }
 
     /** Suggestions appear only while parked, for the trip that just happened. */
@@ -135,8 +201,9 @@ internal class RoutineController(
         }
     }
 
-    override fun setEnabled(routineId: String, enabled: Boolean) = changeRoutines { list ->
-        list.map { if (it.id == routineId) it.copy(enabled = enabled) else it }
+    override fun setEnabled(routineId: String, enabled: Boolean) = synchronized(lock) {
+        forgetTrustLocked(routineId)
+        changeRoutines { list -> list.map { if (it.id == routineId) it.copy(enabled = enabled) else it } }
     }
 
     /**
@@ -155,13 +222,17 @@ internal class RoutineController(
         // Any change at all makes the last skip a statement about the old routine.
         val old = routines.firstOrNull { it.id == routine.id }
         if (old != null && old.actions != routine.actions) history = history.forget(routine.id)
-        if (old != routine) history = history.withoutSkip(routine.id)
+        if (old != routine) {
+            history = history.withoutSkip(routine.id)
+            forgetTrustLocked(routine.id)
+        }
         changeRoutines { list -> if (list.any { it.id == routine.id }) list.map { if (it.id == routine.id) routine else it } else list + routine }
         result
     }
 
     override fun deleteRoutine(routineId: String) = synchronized(lock) {
         if (!parked) return log("routine $routineId not deleted while driving")
+        forgetTrustLocked(routineId)
         changeRoutines { list -> list.filterNot { it.id == routineId } }
     }
 
@@ -174,6 +245,15 @@ internal class RoutineController(
         notices.clear()
         synchronized(lock) {
             runLog = RunLog()
+            receiptFrom = null
+            drove = false
+            pendingHeld = null
+            stops++
+            AppState.update { it.copy(receipt = null) }
+            if (trust != TrustLedger()) {
+                trust = TrustLedger()
+                saveTrust(trust)
+            }
             changeRoutines { list }
         }
     }
@@ -186,7 +266,9 @@ internal class RoutineController(
     override fun acceptSuggestion() {
         val suggestion = takeSuggestion() ?: return
         habits.answer(suggestion.pattern, suggestion.tripId, FeedbackKind.ACCEPTED, now())
-        changeRoutines { list -> if (list.any { it.id == suggestion.routine.id }) list else list + suggestion.routine }
+        // A habit the app noticed has not been said yes to yet: it asks first until it has (Trust).
+        val adopted = RoutineDraft.askingFirst(suggestion.routine)
+        changeRoutines { list -> if (list.any { it.id == adopted.id }) list else list + adopted }
         log("suggestion accepted: ${suggestion.routine.id}")
     }
 
@@ -207,15 +289,17 @@ internal class RoutineController(
     }
 
     override fun onDecision(decision: Decision) {
-        synchronized(lock) {
+        val earned = synchronized(lock) {
+            var answer: Pair<Routine, Trust.Answer>? = null
             history = when (decision) {
                 is Decision.Ran -> {
                     // A report that does not fit the routine's actions belongs to an edited-away version.
                     // Held notices of a report arriving after the release have gone out with it.
                     val report = decision.report.let { if (quietLocked()) it else it.copy(results = it.results.heldShown()) }
-                    val actions = routines.firstOrNull { it.id == report.routineId }?.actions ?: return
-                    if (report.firstIndex + report.results.size > actions.size) return
+                    val routine = routines.firstOrNull { it.id == report.routineId } ?: return
+                    if (report.firstIndex + report.results.size > routine.actions.size) return
                     runLog = runLog.withRun(report, nameOf(report.routineId), now())
+                    Trust.answer(routine, report)?.let { answer = routine to it }
                     history.withReport(report, now())
                 }
                 // A trigger came but the routine did not run: the card says why.
@@ -228,8 +312,38 @@ internal class RoutineController(
                     history.withSkip(id, skip)
                 }
             }
+            // Counted before publishing, so the card shows this answer.
+            val name = answer?.let { (routine, said) -> countAnswerLocked(routine, said) }
             publishLocked()
+            name
         }
+        earned?.let { name -> runCatching { onTrustEarned(name) }.onFailure { log("trust notice not shown: ${it.message}") } }
+    }
+
+    /**
+     * Counts the driver's answer; on the third yes in a row the routine stops asking. Returns its name then, for the
+     * notice, which goes out after the lock is released (the notifier takes the hold's lock first).
+     */
+    private fun countAnswerLocked(routine: Routine, said: Trust.Answer): String? {
+        val (next, earned) = when (said) {
+            Trust.Answer.YES -> trust.afterYes(routine.id)
+            Trust.Answer.NO -> trust.afterNo(routine.id) to false
+        }
+        if (next != trust) {
+            trust = next
+            saveTrust(trust)
+        }
+        if (!earned) return null
+        changeRoutines { list -> list.map { if (it.id == routine.id) it.copy(policy = it.policy.copy(askBeforeRun = false)) else it } }
+        log("routine ${routine.id} earned running without asking")
+        return routine.name
+    }
+
+    private fun forgetTrustLocked(routineId: String) {
+        val next = trust.forget(routineId)
+        if (next == trust) return
+        trust = next
+        saveTrust(trust)
     }
 
     override fun onResult(update: ResultUpdate) {
@@ -237,6 +351,10 @@ internal class RoutineController(
             // The run moved on, so "still waiting" no longer holds.
             history = history.withUpdate(update).withoutSkip(update.routineId)
             runLog = runLog.withUpdate(update)
+            // An action after a wait asks again: a no there starts the count again too.
+            if (Trust.refused(update.result)) {
+                routines.firstOrNull { it.id == update.routineId && it.policy.askBeforeRun }?.let { countAnswerLocked(it, Trust.Answer.NO) }
+            }
             publishLocked()
         }
     }
@@ -264,7 +382,7 @@ internal class RoutineController(
     }
 
     private fun publishLocked() {
-        val items = routines.map { RoutineItem(it, history[it.id], history.skip(it.id)) }
+        val items = routines.map { RoutineItem(it, history[it.id], history.skip(it.id), trust.count(it.id)) }
         AppState.update { it.copy(routines = items, log = runLog.entries) }
     }
 
@@ -279,5 +397,7 @@ internal class RoutineController(
         /** One showing per suggestion per half day; the habit log's own quiet periods do the rest. */
         const val SHOWN_DEDUP_MS = 12 * 60 * 60_000L
         const val SKIP_REPUBLISH_MS = 1_000L
+        /** A parked trigger holds 3 s, and a parked question is usually answered within seconds. */
+        const val RECEIPT_GRACE_MS = 20_000L
     }
 }

@@ -46,6 +46,7 @@ class RunLog(val entries: List<RunLogEntry> = emptyList(), private val max: Int 
     private fun add(entry: RunLogEntry) = RunLog((listOf(entry) + entries).take(max), max)
 
     companion object {
-        const val MAX_ENTRIES = 30
+        /** Enough for a long drive's receipt (TripReceipt); the screen shows only the newest few. */
+        const val MAX_ENTRIES = 100
     }
 }

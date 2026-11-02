@@ -11,6 +11,9 @@ internal class NoticeHold(private val max: Int = MAX_HELD) {
 
     data class Released(val texts: List<String>, val dropped: Int) {
         val isEmpty: Boolean get() = texts.isEmpty() && dropped == 0
+
+        /** Two releases that go out as one digest (the car moved again before the first went out). */
+        operator fun plus(other: Released) = Released((texts + other.texts).distinct(), dropped + other.dropped)
     }
 
     /**

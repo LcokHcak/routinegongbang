@@ -68,6 +68,19 @@ object RoutineDraft {
 
     fun withAskBeforeRun(routine: Routine, ask: Boolean) = routine.copy(policy = routine.policy.copy(askBeforeRun = ask))
 
+    /**
+     * A ready-made or noticed routine starts by asking first when it would change a setting or a route, until the
+     * driver has said yes three times (Trust). Only where the answer can be given: at a parked moment, with no wait
+     * after which the car may be moving. While driving a question is only a notice, and the yeses would never come.
+     */
+    fun askingFirst(routine: Routine): Routine {
+        val acts = routine.actions.any { it is Action.Write || it is Action.SetDestination }
+        // Getting out is parked too, but nobody is left in the seat to answer then.
+        val seated = setOf(Trigger.RideStart, EditorCatalog.trigger(TriggerChoice.PARKED))
+        val parkedOnly = routine.trigger in seated && routine.actions.none { it is Action.Wait }
+        return if (acts && parkedOnly) withAskBeforeRun(routine, true) else routine
+    }
+
     fun withName(routine: Routine, name: String) = routine.copy(name = name)
 
     /** One step of the action's value: a switch flips, a level or temperature moves within its range. */

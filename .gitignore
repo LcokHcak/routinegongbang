@@ -1,5 +1,6 @@
-# --- Local notes, not part of the repository ---
-/docs/
+# --- Local notes, not part of the repository (the README's screenshots are) ---
+/docs/*
+!/docs/screenshots/
 /drafts/
 
 # --- Secrets ---

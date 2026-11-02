@@ -268,7 +268,7 @@
     <string name="demo_banner">체험 모드 · 모의 차량이에요. 실제 차량의 루틴은 멈춰 있어요.</string>
     <string name="demo_paused">습관을 찾았어요. 아래 「습관 발견」 카드에 답한 뒤 계속하세요.</string>
     <string name="demo_habit_title">습관 발견</string>
-    <string name="demo_habit_story">사흘 아침 연달아 핸들 열선을 직접 켜면 루틴을 제안하고, 받아들이면 나흘째 아침엔 알아서 켜요.</string>
+    <string name="demo_habit_story">사흘 아침 연달아 핸들 열선을 직접 켜면 루틴을 제안해요. 받아들이면 나흘째 아침엔 먼저 물어보고, 세 번 연속 허락하면 그다음부터 알아서 켜요.</string>
     <string name="demo_capability_title">제어가 열리는 날</string>
     <string name="demo_capability_story">지금은 알림으로 알려 드리던 같은 루틴이, 차량 제어가 열리면 그대로 자동으로 실행돼요. 아래 기록에서 전과 후를 비교해 보세요.</string>
     <string name="demo_rain_title">비 오는 날</string>
@@ -280,7 +280,13 @@
     <string name="permission_fix">권한 다시 요청</string>
     <string name="permission_notify_off">알림 권한이 없어 실행 결과를 알림으로 받을 수 없어요.</string>
     <string name="notify_digest_title">주행 중에 있었던 루틴 소식</string>
-    <string name="notify_digest_more">· 그 밖에 %1$d건이 더 있었어요</string>
+    <string name="notify_more">외 %1$d건 · 자세한 내용은 루틴공방에서</string>
+    <string name="receipt_title">이번 주행 루틴 영수증</string>
+    <string name="receipt_skipped">건너뜀 %1$d번 — %2$s</string>
+    <string name="receipt_span">%1$s – %2$s</string>
+    <string name="notify_trust_earned">「%1$s」을(를) %2$d번 연속 허락하셔서, 다음부터는 묻지 않고 할게요. 루틴 편집에서 언제든 되돌릴 수 있어요.</string>
+    <string name="trust_asking">먼저 묻기 · 허락 %1$d/%2$d</string>
+    <string name="suggestion_asks_first">처음엔 실행 전에 물어보고, %1$d번 연속 허락하시면 그다음부터 알아서 해요.</string>
     <string name="log_title">최근 기록</string>
     <string name="log_empty">아직 기록이 없어요.</string>
     <string name="log_skipped">건너뜀</string>

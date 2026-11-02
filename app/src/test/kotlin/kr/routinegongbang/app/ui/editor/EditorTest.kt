@@ -44,6 +44,26 @@ class EditorCatalogTest {
     }
 
     @Test
+    fun `a template that only acts at a parked moment starts by asking first`() {
+        // Asking while driving is only a notice (no speech recognition yet), so a routine that may act on the move
+        // would never hear the three yeses that let it run by itself.
+        val asking = Template.entries.filter { EditorCatalog.template(it, "t", "t").policy.askBeforeRun }
+        assertEquals(listOf(Template.HOT_DAY, Template.COMMUTE_HOME), asking)
+    }
+
+    @Test
+    fun `asking first is only the default for writes and routes at getting in, parking or getting out`() {
+        val heat = Action.Write(SignalIds.STEERING_WHEEL_HEAT, SignalValue.of(1))
+        val base = Routine(id = "r", name = "r", trigger = Trigger.RideStart, actions = listOf(heat))
+        assertTrue(RoutineDraft.askingFirst(base).policy.askBeforeRun)
+        assertTrue(RoutineDraft.askingFirst(base.copy(trigger = EditorCatalog.trigger(TriggerChoice.PARKED))).policy.askBeforeRun)
+        assertFalse(RoutineDraft.askingFirst(base.copy(trigger = EditorCatalog.trigger(TriggerChoice.RAIN))).policy.askBeforeRun)
+        assertFalse(RoutineDraft.askingFirst(base.copy(trigger = Trigger.RideEnd)).policy.askBeforeRun, "after getting out nobody is there to answer")
+        assertFalse(RoutineDraft.askingFirst(base.copy(actions = listOf(heat, Action.Wait(600), heat))).policy.askBeforeRun, "after a wait the car may be moving")
+        assertFalse(RoutineDraft.askingFirst(base.copy(actions = listOf(Action.Notify("notify.window_open")))).policy.askBeforeRun)
+    }
+
+    @Test
     fun `every template is a routine the app accepts as it is`() {
         Template.entries.forEach { template ->
             val routine = EditorCatalog.template(template, id = "t", name = "이름")
