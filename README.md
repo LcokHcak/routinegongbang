@@ -15,6 +15,7 @@
 
 | | |
 |---|---|
+| 내려받기 | **[Release v0.1.0](https://github.com/LcokHcak/routinegongbang/releases/tag/v0.1.0)**: 서명된 APK와 시연 영상을 한 곳에서 (SHA-256 포함) |
 | APK | [`apk/루틴공방_루틴공방_release.apk`](apk/루틴공방_루틴공방_release.apk) (서명된 release 빌드, 버전 0.1.0, 패키지 `kr.routinegongbang.app`) |
 | 시연 영상 | [`video/루틴공방_데모.mp4`](video/루틴공방_데모.mp4) (2분 27초). Pleos Connect 에뮬레이터 화면 그대로입니다. 실제 신호 장면은 Virtual Console로 기어 · 와이퍼 · 창문을 바꿔 녹화했고, 단계적 신뢰 장면만 차량 제어가 열린 debug 빌드, 체험 모드 장면에는 「모의 차량」이라고 표시했습니다. |
 | 테스트 | 단위 테스트 725개(core 488 · app 237), push마다 GitHub Actions에서 실행 |
